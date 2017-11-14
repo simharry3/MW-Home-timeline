@@ -66,7 +66,8 @@
 %	ABSTRACT
 %----------------------------------------------------------------------------------------
 
-\Abstract{This document is an overvew of the GPU N-Body project for MilkyWay@Home.}
+\Abstract{
+}
 
 %----------------------------------------------------------------------------------------
 
@@ -84,6 +85,36 @@
 %	ARTICLE CONTENTS
 %----------------------------------------------------------------------------------------
 
+\section*{Overview}
+This document is an overvew of the GPU N-Body project for MilkyWay@Home, and my contributions to it over the course of my Master's Degree work. As of the writing of this summary, the following has been completed:
+\begin{itemize}
+    \setlength\itemsep{0.1pt}
+    \item Learn OpenCL
+    \item Brute Force N-Body Kernels
+    \item Bounding Box Kernel
+    \item Morton Encoding Kernel
+    \item Bitonic Sorting Kernel
+    \item Binary Tree Construction Kernel
+    \item Naive Parallel Prefix Sum Kernel
+    \item Octree Construction Kernel
+\end{itemize}
+~\\
+
+By the end of the Spring 2018 semester (03/15/2018), the following will be completed:
+\begin{itemize}
+    \setlength\itemsep{0.1pt}
+    \item Full Parallelization of Prefix Sum Kernel
+    \item Verify GPU Tree Construction
+    \item Octree Threading Kernel
+    \item Force Calculation Kernel
+    \item Particle Integration Kernel
+    \item Result Verification
+    \item Error Mitigation
+    \item Write Paper
+    \item Release on MilkyWay@Home
+\end{itemize}
+For a more in-depth timeline, please refer to the Remaining Work section.
+
 \section*{Introduction} % The \section*{} command stops section numbering
 MilkyWay@Home is a massively distributed computing project which runs on the BOINC network. Users donate computing time to the project, and part of that computing time goes towards simulating the tidal disruption of a dwarf galaxy as it falls into a gravitational potential model of the Milky Way galaxy. Right now, N-Body calculations are all done on the CPU. While some optimization is possible by using a Barnes-Hut treecode algorithm, there is a vast untapped potential for using volunteer GPU time. By porting MilkyWay@Home N-Body to run on users' GPU, we can more efficiently use the volunteer computing time, and allow the userbase to make a larger impact.
 
@@ -96,7 +127,7 @@ Learned how to use the OpenCL API for accessing the GPU. Includes creating memor
 %------------------------------------------------
 
 \section{Brute-Force Exact N-Body}
-The brute force GPU algorithm is an $O(\frac{n}{p}^2)$ algorithm, which computes forces between each particle exacted by all other particles in the system. This is an extremely slow method, however it does produce the most “exact” results with the least approximation error. In the MilkyWay@Home CPU code, we implement this as well as a more efficient Barnes-Hut treecode.
+The brute force GPU algorithm is an $O\left(\left(\frac{n}{p}\right)^2\right)$ algorithm, which computes forces between each particle exacted by all other particles in the system. This is an extremely slow method, however it does produce the most “exact” results with the least approximation error. In the MilkyWay@Home CPU code, we implement this as well as a more efficient Barnes-Hut treecode.
 
 \subsection{Branch Optimization}
 Branch divergence on the GPU incurs a significant performance penalty, as groups of processing cores on the GPU operate in lock-step with eachother. Branching within a workgroup causes processors that did not take the branch to perform instruction repetition in order to “wait” for the branched processes to catch up. For example, on current nVidia architectures, one thread which diverges from the workgroup can de-rail 31 other threads as they wait for the process to finish. To combat this, if possible, branch statements are replaced with logic multipliers on various values so that branch divergence is not possible.
@@ -127,7 +158,7 @@ Using the sorted morton codes, a binary tree is constructed based off of the wor
 Each edge in the binary GPU tree then is examined to determine how many octree nodes it will contribute to the final GPU octree. These counts are put into an array in global memory, indexed inline with the node’s location in the binary tree array. Once this is complete, a parallel prefix sum kernel is run, to determine the number of nodes and final data indexing in the octree. 
 
 \subsection{Octree Construction}
-Armed with all of this information, we are finally able to construct the octree by examining the parallel prefix sum array, and the binary tree ancestors. 
+Armed with all of this information, we are finally able to construct the octree by examining the parallel prefix sum array, and the binary tree ancestors. Using this, we fill in the morton prefix of each location of the octree, and then decend the tree starting from the root, matching prefixes with the leaf nodes in order to link them with the internal nodes.
 
 %------------------------------------------------
 
@@ -161,6 +192,14 @@ Once a simulation is running, the results have to be verified in comparison to t
 \subsection{Error Mitigation}
 \textbf{EXPECTED COMPLETION: 03/01/2018}\\
 Finally, small errors that will accumulate due to intrinsic differences between CPU and GPU operation will have to be dealt with statistically. This is vitally important as we will be running on a heterogeneous computing platform, with all different types of hardware, and we still need to be able to verify results that get returned from our volunteers, even if the computer that does the result verification is doing it on different hardware.
+
+\subsection{Master's Thesis}
+\textbf{EXPECTED COMPLETION: 03/15/2018}\\
+A comprehensive paper on this subject will be written, and submitted to OGE as a master's thesis. A committee has already been formed, and the background of the paper is written. As the semester goes on, more will be added to the paper alongside the work done to the code, so the time between 03/01/2018 and 03/15/2018 will be used for addition of graphs, results, and final edits before review with advisors.
+
+\subsection{Release on MilkyWay@Home}
+\textbf{EXPECTED COMPLETION: 04/01/2018}\\
+All of this code, along with the paper, will be released on MilkyWay@Home, ready for users to start performing GPU N-Body computations for the project. A post on the MilkyWay@Home forums will be made, with a reference to the paper (once approved), so that users can better understand the GPU N-Body code that they will be running.
 
 % ------------------------------------------------
 \phantomsection
