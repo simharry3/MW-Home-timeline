@@ -129,6 +129,19 @@ Learned how to use the OpenCL API for accessing the GPU. General topics include 
 \section{Brute-Force Exact N-Body}
 The brute force GPU algorithm is an $O\left(\left(\frac{n}{p}\right)^2\right)$ algorithm, which computes forces between each particle exacted by all other particles in the system. This is an extremely slow method, however it does produce the most “exact” results with the least approximation error. In the MilkyWay@Home CPU code, we implement this as well as a more efficient Barnes-Hut treecode.
 
+\subsection{Force Calculation Kernels}
+The force calculation kernels are relatively simple compared to the other kernels. During each step of the simulation, each particle is assigned to a different thread. To compute the force on the thread's assigned particles, it looks at each particle in the simulation, and computes the distance to that particle, and then using the standard $\frac{1}{r^2}$ gravitational formula, it computes an acceleration on the particle. Floating point error is accumulated the same for each particle, as the list of particles is traversed in the same order by all threads.
+
+\subsection{Integration Kernels}
+Integration kernels are broken up into "half action" kernels to match their CPU counterparts. During a step of the simulation, the particle integration sequence is as follows:
+\begin{enumerate}
+    \setlength\itemsep{0.1pt}
+    \item Half velocity
+    \item Half position
+    \item Half velocity
+    \item Half position
+\end{enumerate}
+
 \subsection{Branch Optimization}
 Branch divergence on the GPU incurs a significant performance penalty, as groups of processing cores on the GPU operate in lock-step with eachother. Branching within a workgroup causes processors that did not take the branch to perform instruction repetition in order to “wait” for the branched processes to catch up. For example, on current nVidia architectures, one thread which diverges from the workgroup can de-rail 31 other threads as they wait for the process to finish. To combat this, if possible, branch statements are replaced with logic multipliers on various values so that branch divergence is not possible.
 
