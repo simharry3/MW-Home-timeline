@@ -122,12 +122,12 @@ The overarching goal of this project is to implement a fully-parallelized GPU Ba
 %------------------------------------------------
 
 \section{OpenCL}
-Learned how to use the OpenCL API for accessing the GPU. General topics include creating memory buffers in GPU memory, querying and utilizing device info, compiling kernels for use on the GPU, and GPU garbage collection.
+Learned how to use the OpenCL API for accessing the GPU. While using CUDA would be easier, since MilkyWay@Home runs on volunteer computers with unknown hardware, the possiblity of users having AMD/ATI hardware exists, so we use OpenCL to access both NVIDIA and AMD/ATI hardware. OpenCL requires the explicit creation of GPU context information, where the machine is queried for what hardware it contains. Creation of buffers on the GPU for global device memory is done from the host machine once OpenCL is aware of what hardware it is using. To be able to support multiple device architectures, OpenCL kernel code is compiled JIT (Just In Time) when the user runs our OpenCL application. Finally once kernels are created, and buffers allocated, the relevent data is pushed to the GPU, and the simulation is started by pushing kernel calls to the OpenCL command queue. In the future, checkpointing will be addded every few hundred cycles of kernel calls in order to free up the GPU every so often to satisfy OS requirements for GPU utilization, as well as to protect against unexpected shutdown of the application.
 
 %------------------------------------------------
 
 \section{Brute-Force Exact N-Body}
-The brute force GPU algorithm is an $O\left(\left(\frac{n}{p}\right)^2\right)$ algorithm, which computes forces between each particle exacted by all other particles in the system. This is an extremely slow method, however it does produce the most “exact” results with the least approximation error. In the MilkyWay@Home CPU code, we implement this as well as a more efficient Barnes-Hut treecode.
+The brute force GPU algorithm is an $O\left(\frac{n^2}{p}\right)$ algorithm where $n$ is the number of particles in the simulation, and $p$ is the number of threads. The algorithm computes forces between each particle exacted by all other particles in the system. This is an extremely slow method, however it does produce the most “exact” results with the least approximation error. In the MilkyWay@Home CPU code, we implement this as well as a more efficient Barnes-Hut treecode. A flow chart of the GPU Exact computation strategy can be seen in Figure 1.
 
 \subsection{Force Calculation Kernels}
 The force calculation kernels are relatively simple compared to the other kernels. During each step of the simulation, each particle is assigned to a different thread. To compute the force on the thread's assigned particles, it looks at each particle in the simulation, and computes the distance to that particle, and then using the standard $\frac{1}{r^2}$ gravitational formula, it computes an acceleration on the particle. Floating point error is accumulated the same for each particle, as the list of particles is traversed in the same order by all threads.
@@ -136,14 +136,23 @@ The force calculation kernels are relatively simple compared to the other kernel
 Integration kernels are broken up into "half action" kernels to match their CPU counterparts. During a step of the simulation, the particle integration sequence is as follows:
 \begin{enumerate}
     \setlength\itemsep{0.1pt}
-    \item Half velocity
-    \item Half position
-    \item Half velocity
-    \item Half position
+    \item Half velocity update
+    \item Position update
+    \item Half velocity update
+    \item Acceleration calculation
 \end{enumerate}
+We break the integration up into four interleaved steps in order to get a more precise estimate during the motion. For our purposes, we assume acceleration is constant through the entirety of the motion, which in actuality is not true. While the change in acceleration across the particle's motion, especially with a small simulation timestep, is quite small, by integrating the particle motion in this manner, we help to reduce the error this introduces.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.5\textwidth]{GPUExact.png}
+    \caption{Flow chart of the Exact GPU N-Body algorithm}
+\end{figure}
+
+
 
 \subsection{Branch Optimization}
-Branch divergence on the GPU incurs a significant performance penalty, as groups of processing cores on the GPU operate in lock-step with eachother. Branching within a workgroup causes processors that did not take the branch to perform instruction repetition in order to “wait” for the branched processes to catch up. For example, on current nVidia architectures, one thread which diverges from the workgroup can de-rail 31 other threads as they wait for the process to finish. To combat this, if possible, branch statements are replaced with logic multipliers on various values so that branch divergence is not possible.
+Branch divergence on the GPU incurs a significant performance penalty, as groups of processing cores on the GPU operate in lock-step with eachother. Branching within a workgroup causes processors that did not take the branch to perform instruction repetition in order to “wait” for the branched processes to catch up. For example, on current NVIDIA architectures, one thread which diverges from the workgroup can de-rail 31 other threads as they wait for the process to finish. To combat this, if possible, branch statements are replaced with logic multipliers on various values so that branch divergence is not possible.
 
 \subsection{Local Work Group Optimization}
 By far the fastest memory on the GPU accessable to multiple threads is in local memory. To further speed up calculations, each work unit chunks off a segment of the data, and then stores it in local memory, based on the workgroup’s ID. This is used for the reduction operations, as well as the particle integration for updating velocity and position. Copying to local memory also prevents threads from colliding when trying to access data which exists in global memory. When two or more threads collide while accessing global memory, the operation is serialized with order determined in a FIFO schedule. This can cause a significant performance penalty, especially on pattern based data access.
@@ -153,7 +162,7 @@ By far the fastest memory on the GPU accessable to multiple threads is in local 
 % -------------------------------------------------------------------------------
 
 \section{Barnes-Hut treecode N-Body}
-The Barnes-Hut algorithm for N-Body calculations makes use of an octree for determining which groups of particles will interact. Each internal node of the octree contains the center of mass of all of the particles which are children of it (including those in other internal nodes). If the center of mass of a particluar node is far enough away from a given particle, then the interactive forces to the particle which is being calculated is done by the center of mass, rather than all the individual children particles. Performing the force calculations in this way results in an $O(\frac{n}{p} log n)$ complexity, which is much better than the brute force algorithm.
+The Barnes-Hut algorithm for N-Body calculations makes use of an octree for determining which groups of particles will interact by recursively subdividing the simulation space into octants until each octant contains one or zero particles. Each internal node of the octree contains the center of mass of all of the particles which are children of it (including those in other internal nodes). If the center of mass of a particluar node is far enough away from a given particle, then the interactive forces to the particle which is being calculated is done by the center of mass, rather than all the individual children particles. Performing the force calculations in this way results in an $O(\frac{n}{p} log n)$ complexity, which is much better than the brute force algorithm. On the GPU, however, since we are using OpenCL we can not create recursive kernel calls, and this is not great for parallel performance anyway, so we utilize a method outlined in \cite{Karras:2012} in order to construct the GPU Octree in parallel using a z-order space filling curve. The process is outlined in Figure 2.
 
 \subsection{Bounding Box}
 Before treecode can begin, we need to know our simulation bounds. Bounding box does a 3 dimensional reduction operation to compute the min and max for each dimension. Almost all branch statements in the kernel have been eliminated by using logical multipliers as described previously. Since the reduction is on randomly ordered data, the possibility for divergence is very high. 
@@ -165,13 +174,21 @@ Once we have the simulation bounds, we encode each particle with a 30-bit 3d mor
 Encoded particles then are sorted using a parallel bitonic sorting algorithm. Bitonic sorts are excellent for parallelization, as sort operations are independent of one another, and it can be performed in-place which is perfect for the GPU. Bitonic sort is also agnostic of the input data order, meaning sorts will always take the same amount of time.
 
 \subsection{Binary Tree Construction}
-Using the sorted morton codes, a binary tree is constructed based off of the work demonstrated in karras 2012. Each thread in parallel examines its assigned morton code, and determines where its children are, based on the sorted morton code list by examining differences in the morton codes starting from the highest order bit.
+Using the sorted morton codes, a binary tree is constructed based off of the work demonstrated in \cite{Karras:2012}. Each thread in parallel examines its assigned morton code, and determines where its children are, based on the sorted morton code list by examining differences in the morton codes starting from the highest order bit.
 
 \subsection{Parallel Prefix Sum}
 Each edge in the binary GPU tree then is examined to determine how many octree nodes it will contribute to the final GPU octree. These counts are put into an array in global memory, indexed inline with the node’s location in the binary tree array. Once this is complete, a parallel prefix sum kernel is run, to determine the number of nodes and final data indexing in the octree. 
 
 \subsection{Octree Construction}
 Armed with all of this information, we are finally able to construct the octree by examining the parallel prefix sum array, and the binary tree ancestors. Using this, we fill in the morton prefix of each location of the octree, and then decend the tree starting from the root, matching prefixes with the leaf nodes in order to link them with the internal nodes.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.5\textwidth]{GPUTreecode.png}
+    \caption{Flow chart of the Treecode GPU N-Body algorithm. Kernels that are complete are blue, whereas kernels that remain to be written are red.}
+\end{figure}
+
+
 
 %------------------------------------------------
 
@@ -220,7 +237,7 @@ All of this code, along with the paper, will be released on MilkyWay@Home, ready
 
 \addcontentsline{toc}{section}{Acknowledgments} % Adds this section to the table of contents
 
-So long and thanks for all the fish \cite{Karras:2012}.
+GPU Binary Tree and GPU Octree construction is done following algorithms presented in \cite{Karras:2012}.
 
 %----------------------------------------------------------------------------------------
 %	REFERENCE LIST
