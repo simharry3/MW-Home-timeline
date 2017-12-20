@@ -195,28 +195,28 @@ Armed with all of this information, we are finally able to construct the octree 
 \section{Remaining Work}
 
 \subsection{Full Parallelization of Prefix Sum Kernel}
-\textbf{EXPECTED COMPLETION: 11/17/2017}\\
+\textbf{EXPECTED COMPLETION: 01/18/2017}\\
 Currently the Prefix Sum kernel contributes a large amount to the computation profile. This can be reduced to a very small profile by instead doing an in-place prefix tree reduction. The current computation is done by doing a serial prefix sum for each element of the array in parallel. While this produces a correct result, it is very slow.
 
 \subsection{Verify GPU Tree Construction}
-\textbf{EXPECTED COMPLETION: 11/30/2017}\\
+\textbf{EXPECTED COMPLETION: 02/01/2017}\\
 Once GPU tree construction is in a state which is stable, sample runs need to be compared to the actual data to see if the hierarchy is generated correctly, and any issues with this need to be debugged before the calculation can continue. Since the hierarchy is what determines what groups of particles get used by the force calculation, small discrepencies in this can cause a huge difference in the way calculations are made.
 
 \subsection{Thread Octree for Force Calculation}
-\textbf{EXPECTED COMPLETION: 12/14/2017}\\
+\textbf{EXPECTED COMPLETION: 02/01/2017}\\
 To reduce the search times, the simulation octree is threaded with "next" and "more" index pointers which are used during the force calculation to traverse the tree. 
 
 
 \subsection{Force Calculation}
-\textbf{EXPECTED COMPLETION: 01/18/2017}\\
+\textbf{EXPECTED COMPLETION: 02/15/2017}\\
 Once the tree is threaded, each processing thread will start at a particle, and calculate all the forces acting on the particle, based on the locations of groups of particles in the octree. If the center of mass of the octree is far enough away, the CoM is treated as a particle, and will be used to compute the interactive forces on the particle of interest.
 
 \subsection{Particle Integration}
-\textbf{EXPECTED COMPLETION: 02/01/2018}\\
+\textbf{EXPECTED COMPLETION: 02/15/2018}\\
 Following force calculation, the particles must be integrated to find the new velocity and and position after each step of the simulation. This is a simple calculation, and will not add much to the profile, since the interactive force has already been computed. The kernels for this will also be simple, as all the data will be inline, and thread collisions are not an issue, as there is no cross-particle data for this step.
 
 \subsection{Result Verification}
-\textbf{EXPECTED COMPLETION: 02/15/2018}\\
+\textbf{EXPECTED COMPLETION: 02/22/2018}\\
 Once a simulation is running, the results have to be verified in comparison to the CPU. There will be small differences due to a difference in accumulation of floating point error, but in general the simulations should run the same. Small errors that can not be mitigated such as floating point error will have to be dealt with in the error mitigation section.
 
 \subsection{Error Mitigation}
